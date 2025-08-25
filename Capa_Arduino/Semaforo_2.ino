@@ -6,7 +6,7 @@
 // const char *password = "BuaPW0rk.2017";  "fz3EGs2f";             "johanyuri123";
 // Configuración de red Wi-Fi para WOKWI
 const char *ssid = "Pixel 6a Johan";
-const char *password = "johanyuri123"; // Sin contraseña
+const char *password = "johanyuri123";  // Sin contraseña
 
 // Pines para el SEMÁFORO 1 (LEDs directos)
 #define PIN_ROJO_1       5    // Pin para LED Rojo directo
@@ -61,7 +61,7 @@ void loop() {
 void ejecutarSecuenciaSemaforos() {
   // FASE 1: Semáforo 1 en VERDE, Semáforo 2 en ROJO
   digitalWrite(PIN_VERDE_1, HIGH);    // LED Verde directo ON
-  digitalWrite(PIN_ROJO_2, HIGH);     // Relé Rojo ON (bombilla roja)
+  digitalWrite(PIN_ROJO_2, LOW);     // Relé Rojo ON (bombilla roja)
   delay(TIEMPO_VERDE);
   
   // Semáforo 1 parpadea verde (precaución)
@@ -80,26 +80,26 @@ void ejecutarSecuenciaSemaforos() {
   // FASE 3: Semáforo 1 en ROJO, Semáforo 2 en VERDE
   digitalWrite(PIN_AMARILLO_1, LOW);
   digitalWrite(PIN_ROJO_1, HIGH);     // LED Rojo directo ON
-  digitalWrite(PIN_ROJO_2, LOW);      // Relé Rojo OFF
-  digitalWrite(PIN_VERDE_2, HIGH);    // Relé Verde ON (bombilla verde)
+  digitalWrite(PIN_ROJO_2, HIGH);      // Relé Rojo OFF
+  digitalWrite(PIN_VERDE_2, LOW);    // Relé Verde ON (bombilla verde)
   delay(TIEMPO_VERDE);
   
   // Semáforo 2 parpadea verde (precaución)
   for(int i = 0; i < 3; i++) {
-    digitalWrite(PIN_VERDE_2, LOW);
-    delay(500);
     digitalWrite(PIN_VERDE_2, HIGH);
+    delay(500);
+    digitalWrite(PIN_VERDE_2, LOW);
     delay(500);
   }
   
   // FASE 4: Semáforo 2 en AMARILLO, Semáforo 1 sigue en ROJO
-  digitalWrite(PIN_VERDE_2, LOW);
-  digitalWrite(PIN_AMARILLO_2, HIGH); // Relé Amarillo ON (bombilla amarilla)
+  digitalWrite(PIN_VERDE_2, HIGH);
+  digitalWrite(PIN_AMARILLO_2, LOW); // Relé Amarillo ON (bombilla amarilla)
   delay(TIEMPO_AMARILLO);
   
   // Preparar siguiente ciclo
-  digitalWrite(PIN_AMARILLO_2, LOW);
-  digitalWrite(PIN_ROJO_1, LOW);
+  digitalWrite(PIN_AMARILLO_2, HIGH);
+  digitalWrite(PIN_ROJO_1, HIGH);
 }
 
 void apagarTodos() {
@@ -109,7 +109,7 @@ void apagarTodos() {
   digitalWrite(PIN_VERDE_1, LOW);
   
   // Semáforo 2 (con relés)
-  digitalWrite(PIN_ROJO_2, LOW);
-  digitalWrite(PIN_AMARILLO_2, LOW);
-  digitalWrite(PIN_VERDE_2, LOW);
+  digitalWrite(PIN_ROJO_2, HIGH);
+  digitalWrite(PIN_AMARILLO_2, HIGH);
+  digitalWrite(PIN_VERDE_2, HIGH);
 }
