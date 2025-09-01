@@ -1,115 +1,224 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-// Configuración de red Wi-Fi
-// const char *ssid = "BUAP_Trabajadores";  "Mega_2.4G_5DCF";     "Pixel 6a Johan";
-// const char *password = "BuaPW0rk.2017";  "fz3EGs2f";             "johanyuri123";
-// Configuración de red Wi-Fi para WOKWI
-const char *ssid = "Pixel 6a Johan";
-const char *password = "johanyuri123";  // Sin contraseña
+// --- CONFIGURACIÓN ---
+const char* ssid = "INFINITUMC40D";
+const char* password = "f7FZfdfe3M";
 
-// Pines para el SEMÁFORO 1 (LEDs directos)
-#define PIN_ROJO_1       5    // Pin para LED Rojo directo
-#define PIN_AMARILLO_1   19   // Pin para LED Amarillo directo  
-#define PIN_VERDE_1      18   // Pin para LED Verde directo
+// Asignación de pines para los relevadores
+#define PIN_LED_VERDE     21
+#define PIN_LED_AMARILLO  22
+#define PIN_LED_ROJO      23
 
-// Pines para el SEMÁFORO 2 (con relés)
-#define PIN_ROJO_2       23   // Pin para relé Rojo
-#define PIN_AMARILLO_2   22   // Pin para relé Amarillo
-#define PIN_VERDE_2      21   // Pin para relé Verde
-
-// Tiempos de duración (milisegundos)
-#define TIEMPO_VERDE     5000   // 5 segundos
-#define TIEMPO_AMARILLO  1500   // 1.5 segundos
-#define TIEMPO_ROJO      5000   // 5 segundos
-
+// Crear servidor web en el puerto 80
 WebServer server(80);
 
+// --- Variables para la rutina del semáforo ---
+bool rutinaActiva = false;
+unsigned long tiempoVerde = 5000;
+unsigned long tiempoAmarillo = 2000;
+unsigned long tiempoRojo = 8000;
+
+unsigned long tiempoInicioEstado = 0;
+unsigned long tiempoUltimoParpadeo = 0;
+bool estadoLedParpadeo = false;
+const unsigned long intervaloParpadeo = 500; // 500ms para parpadeo
+
+// ESTADOS: 0: Rojo, 1: Verde Fijo, 2: Verde Parpadeando, 3: Amarillo
+int estadoSemaforo = 0;
+
+// --- FUNCIONES DE CONTROL INDIVIDUAL ---
+void handleLedOn(int pin) {
+    // Apagar todos los LEDs primero para evitar conflictos
+    // digitalWrite(PIN_LED_VERDE, LOW);
+    // digitalWrite(PIN_LED_AMARILLO, LOW);
+    // digitalWrite(PIN_LED_ROJO, LOW);
+
+    // Encender el LED solicitado
+    digitalWrite(pin, HIGH);
+    rutinaActiva = false;
+    estadoSemaforo = -1; // Estado manual
+    server.send(200, "text/plain", "Encendido");
+}
+
+void handleLedOff(int pin) {
+    digitalWrite(pin, LOW);
+    server.send(200, "text/plain", "Apagado");
+}
+
+// --- Función para obtener estado individual de LED ---
+void handleLedStatus(int pin) {
+    if (digitalRead(pin) == HIGH) {
+        server.send(200, "text/plain", "Encendido");
+    } else {
+        server.send(200, "text/plain", "Apagado");
+    }
+}
+
+// --- FUNCIONES PARA LA RUTINA ---
+void handleStartRoutine() {
+    if (server.hasArg("verde")) tiempoVerde = server.arg("verde").toInt();
+    if (server.hasArg("amarillo")) tiempoAmarillo = server.arg("amarillo").toInt();
+    if (server.hasArg("rojo")) tiempoRojo = server.arg("rojo").toInt();
+
+    // Apagar todos los LEDs antes de iniciar la rutina
+    digitalWrite(PIN_LED_VERDE, LOW);
+    digitalWrite(PIN_LED_AMARILLO, LOW);
+    digitalWrite(PIN_LED_ROJO, LOW);
+
+    rutinaActiva = true;
+    estadoSemaforo = 0; // Empezamos desde rojo
+    tiempoInicioEstado = millis();
+    tiempoUltimoParpadeo = millis();
+
+    Serial.println("Rutina iniciada - Estado: ROJO");
+    server.send(200, "text/plain", "Rutina iniciada");
+}
+
+void handleStopRoutine() {
+    rutinaActiva = false;
+    digitalWrite(PIN_LED_VERDE, LOW);
+    digitalWrite(PIN_LED_AMARILLO, LOW);
+    digitalWrite(PIN_LED_ROJO, LOW);
+    estadoSemaforo = -1; // Estado manual
+    server.send(200, "text/plain", "Rutina detenida");
+}
+
+// --- ENDPOINT PARA OBTENER EL ESTADO ---
+void handleGetStatus() {
+    String status = "ninguno";
+
+    if (rutinaActiva) {
+        switch (estadoSemaforo) {
+            case 0: status = "rojo"; break;
+            case 1: status = "verde"; break;
+            case 2: status = "verde_parpadeando"; break;
+            case 3: status = "amarillo"; break;
+        }
+    } else {
+        // Si no está en rutina, comprobamos cada LED individualmente
+        if (digitalRead(PIN_LED_ROJO) == HIGH &&
+            digitalRead(PIN_LED_AMARILLO) == HIGH &&
+            digitalRead(PIN_LED_VERDE) == HIGH) {
+            status = "todos";
+        } else if (digitalRead(PIN_LED_VERDE) == HIGH) {
+            status = "verde";
+        } else if (digitalRead(PIN_LED_AMARILLO) == HIGH) {
+            status = "amarillo";
+        } else if (digitalRead(PIN_LED_ROJO) == HIGH) {
+            status = "rojo";
+        }
+    }
+
+    server.send(200, "text/plain", status);
+}
+
+void handleNotFound() {
+    server.send(404, "text/plain", "No encontrado");
+}
+
+// --- SETUP ---
 void setup() {
-  Serial.begin(115200);
-  
-  // Configurar pines como salidas - SEMÁFORO 1 (LEDs directos)
-  pinMode(PIN_ROJO_1, OUTPUT);
-  pinMode(PIN_AMARILLO_1, OUTPUT);
-  pinMode(PIN_VERDE_1, OUTPUT);
-  
-  // Configurar pines como salidas - SEMÁFORO 2 (con relés)
-  pinMode(PIN_ROJO_2, OUTPUT);
-  pinMode(PIN_AMARILLO_2, OUTPUT);
-  pinMode(PIN_VERDE_2, OUTPUT);
+    Serial.begin(115200);
 
-  // Iniciar apagados
-  apagarTodos();
+    pinMode(PIN_LED_VERDE, OUTPUT);
+    pinMode(PIN_LED_AMARILLO, OUTPUT);
+    pinMode(PIN_LED_ROJO, OUTPUT);
 
-  // Conectar WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("Conectando a WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
-  }
-  Serial.println("\nConectado! IP: " + WiFi.localIP().toString());
+    digitalWrite(PIN_LED_VERDE, LOW);
+    digitalWrite(PIN_LED_AMARILLO, LOW);
+    digitalWrite(PIN_LED_ROJO, LOW);
 
-  server.begin();
+    WiFi.begin(ssid, password);
+    Serial.print("Conectando a WiFi");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\n¡Conectado!");
+    Serial.print("Dirección IP: ");
+    Serial.println(WiFi.localIP());
+
+    // Rutas de LEDs
+    server.on("/led/verde/on", [](){ handleLedOn(PIN_LED_VERDE); });
+    server.on("/led/verde/off", [](){ handleLedOff(PIN_LED_VERDE); });
+    server.on("/led/verde/status", [](){ handleLedStatus(PIN_LED_VERDE); });
+
+    server.on("/led/amarillo/on", [](){ handleLedOn(PIN_LED_AMARILLO); });
+    server.on("/led/amarillo/off", [](){ handleLedOff(PIN_LED_AMARILLO); });
+    server.on("/led/amarillo/status", [](){ handleLedStatus(PIN_LED_AMARILLO); });
+
+    server.on("/led/rojo/on", [](){ handleLedOn(PIN_LED_ROJO); });
+    server.on("/led/rojo/off", [](){ handleLedOff(PIN_LED_ROJO); });
+    server.on("/led/rojo/status", [](){ handleLedStatus(PIN_LED_ROJO); });
+
+    // Rutas rutina y estado
+    server.on("/rutina/start", handleStartRoutine);
+    server.on("/rutina/stop", handleStopRoutine);
+    server.on("/status", handleGetStatus);
+    server.onNotFound(handleNotFound);
+
+    server.begin();
+    Serial.println("Servidor HTTP iniciado");
 }
 
+// --- LOOP ---
 void loop() {
-  server.handleClient();
-  ejecutarSecuenciaSemaforos();
-}
+    server.handleClient();
 
-void ejecutarSecuenciaSemaforos() {
-  // FASE 1: Semáforo 1 en VERDE, Semáforo 2 en ROJO
-  digitalWrite(PIN_VERDE_1, HIGH);    // LED Verde directo ON
-  digitalWrite(PIN_ROJO_2, LOW);     // Relé Rojo ON (bombilla roja)
-  delay(TIEMPO_VERDE);
-  
-  // Semáforo 1 parpadea verde (precaución)
-  for(int i = 0; i < 3; i++) {
-    digitalWrite(PIN_VERDE_1, LOW);
-    delay(500);
-    digitalWrite(PIN_VERDE_1, HIGH);
-    delay(500);
-  }
-  
-  // FASE 2: Semáforo 1 en AMARILLO, Semáforo 2 sigue en ROJO
-  digitalWrite(PIN_VERDE_1, LOW);
-  digitalWrite(PIN_AMARILLO_1, HIGH); // LED Amarillo directo ON
-  delay(TIEMPO_AMARILLO);
-  
-  // FASE 3: Semáforo 1 en ROJO, Semáforo 2 en VERDE
-  digitalWrite(PIN_AMARILLO_1, LOW);
-  digitalWrite(PIN_ROJO_1, HIGH);     // LED Rojo directo ON
-  digitalWrite(PIN_ROJO_2, HIGH);      // Relé Rojo OFF
-  digitalWrite(PIN_VERDE_2, LOW);    // Relé Verde ON (bombilla verde)
-  delay(TIEMPO_VERDE);
-  
-  // Semáforo 2 parpadea verde (precaución)
-  for(int i = 0; i < 3; i++) {
-    digitalWrite(PIN_VERDE_2, HIGH);
-    delay(500);
-    digitalWrite(PIN_VERDE_2, LOW);
-    delay(500);
-  }
-  
-  // FASE 4: Semáforo 2 en AMARILLO, Semáforo 1 sigue en ROJO
-  digitalWrite(PIN_VERDE_2, HIGH);
-  digitalWrite(PIN_AMARILLO_2, LOW); // Relé Amarillo ON (bombilla amarilla)
-  delay(TIEMPO_AMARILLO);
-  
-  // Preparar siguiente ciclo
-  digitalWrite(PIN_AMARILLO_2, HIGH);
-  digitalWrite(PIN_ROJO_1, HIGH);
-}
+    if (rutinaActiva) {
+        unsigned long tiempoActual = millis();
+        unsigned long tiempoTranscurrido = tiempoActual - tiempoInicioEstado;
 
-void apagarTodos() {
-  // Semáforo 1 (LEDs directos)
-  digitalWrite(PIN_ROJO_1, LOW);
-  digitalWrite(PIN_AMARILLO_1, LOW);
-  digitalWrite(PIN_VERDE_1, LOW);
-  
-  // Semáforo 2 (con relés)
-  digitalWrite(PIN_ROJO_2, HIGH);
-  digitalWrite(PIN_AMARILLO_2, HIGH);
-  digitalWrite(PIN_VERDE_2, HIGH);
+        switch (estadoSemaforo) {
+            case 0: // ROJO
+                digitalWrite(PIN_LED_ROJO, HIGH);
+                digitalWrite(PIN_LED_VERDE, LOW);
+                digitalWrite(PIN_LED_AMARILLO, LOW);
+                if (tiempoTranscurrido >= tiempoRojo) {
+                    estadoSemaforo = 1;
+                    tiempoInicioEstado = tiempoActual;
+                    Serial.println("Cambiando a VERDE");
+                }
+                break;
+
+            case 1: // VERDE FIJO
+                digitalWrite(PIN_LED_VERDE, HIGH);
+                digitalWrite(PIN_LED_AMARILLO, LOW);
+                digitalWrite(PIN_LED_ROJO, LOW);
+                if (tiempoTranscurrido >= tiempoVerde) {
+                    estadoSemaforo = 2;
+                    tiempoInicioEstado = tiempoActual;
+                    tiempoUltimoParpadeo = tiempoActual;
+                    Serial.println("Cambiando a VERDE PARPADEANDO");
+                }
+                break;
+
+            case 2: // VERDE PARPADEANDO
+                if (tiempoActual - tiempoUltimoParpadeo >= intervaloParpadeo) {
+                    tiempoUltimoParpadeo = tiempoActual;
+                    estadoLedParpadeo = !estadoLedParpadeo;
+                    digitalWrite(PIN_LED_VERDE, estadoLedParpadeo);
+                }
+                if (tiempoTranscurrido >= 3000) {
+                    digitalWrite(PIN_LED_VERDE, LOW);
+                    estadoSemaforo = 3;
+                    tiempoInicioEstado = tiempoActual;
+                    Serial.println("Cambiando a AMARILLO");
+                }
+                break;
+
+            case 3: // AMARILLO
+                digitalWrite(PIN_LED_AMARILLO, HIGH);
+                digitalWrite(PIN_LED_VERDE, LOW);
+                digitalWrite(PIN_LED_ROJO, LOW);
+                if (tiempoTranscurrido >= tiempoAmarillo) {
+                    digitalWrite(PIN_LED_AMARILLO, LOW);
+                    estadoSemaforo = 0;
+                    tiempoInicioEstado = tiempoActual;
+                    Serial.println("Cambiando a ROJO");
+                }
+                break;
+        }
+    }
 }
